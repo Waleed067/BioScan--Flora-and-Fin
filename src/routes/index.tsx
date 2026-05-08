@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { ScanReport, type Report } from "@/components/ScanReport";
+import { ChatBot } from "@/components/ChatBot";
 import heroImage from "@/assets/hero.jpg";
 
 export const Route = createFileRoute("/")({
@@ -244,6 +245,7 @@ function Index() {
       <footer className="border-t border-border/50 py-8 text-center text-xs text-muted-foreground">
         BioScan AI · Identifications are for guidance — consult an expert for critical decisions.
       </footer>
+      <ChatBot />
     </div>
   );
 }
