@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 .lovable
+.env
 dist
 dist-ssr
 .output
