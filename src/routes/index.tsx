@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Camera, Upload, Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw } from "lucide-react";
+import { Camera, Upload, Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { ScanReport, type Report } from "@/components/ScanReport";
 import { ChatBot } from "@/components/ChatBot";
+import { ImageCropper } from "@/components/ImageCropper";
 import heroImage from "@/assets/hero.jpg";
 
 export const Route = createFileRoute("/")({
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "BioScan AI — Identify & Diagnose Plants and Fish" },
       { property: "og:description", content: "Snap a photo. Get instant species ID, disease diagnosis, and care guidance powered by AI." },
     ],
+    links: [{ rel: "manifest", href: "/manifest.webmanifest" }],
   }),
   component: Index,
 });
@@ -31,8 +33,7 @@ function readFileAsDataURL(file: File): Promise<string> {
   });
 }
 
-async function compressImage(file: File, max = 1280, quality = 0.85): Promise<string> {
-  const dataUrl = await readFileAsDataURL(file);
+async function compressDataUrl(dataUrl: string, max = 1600, quality = 0.88): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -54,38 +55,57 @@ async function compressImage(file: File, max = 1280, quality = 0.85): Promise<st
 function Index() {
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
-  const [image, setImage] = useState<string | null>(null);
+  const [rawImage, setRawImage] = useState<string | null>(null); // before crop
+  const [image, setImage] = useState<string | null>(null);       // analyzed crop
   const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<Report | null>(null);
+  const [subjects, setSubjects] = useState<Report[] | null>(null);
+  const [activeIdx, setActiveIdx] = useState(0);
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
       toast.error("Please upload an image file");
       return;
     }
-    setReport(null);
-    setLoading(true);
+    setSubjects(null);
+    setImage(null);
     try {
-      const compressed = await compressImage(file);
-      setImage(compressed);
+      const raw = await readFileAsDataURL(file);
+      const sized = await compressDataUrl(raw, 1920, 0.92);
+      setRawImage(sized);
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not read image");
+    }
+  }, []);
+
+  const runAnalysis = useCallback(async (cropped: string) => {
+    setRawImage(null);
+    setLoading(true);
+    setImage(cropped);
+    try {
       const { data, error } = await supabase.functions.invoke("analyze", {
-        body: { image: compressed },
+        body: { image: cropped },
       });
       if (error) {
-        const msg = (error as any)?.context?.status === 429
+        const status = (error as any)?.context?.status;
+        const msg = status === 429
           ? "Too many requests. Please wait a moment."
-          : (error as any)?.context?.status === 402
+          : status === 402
           ? "AI credits exhausted. Add credits in your workspace."
           : "Analysis failed. Please try again.";
         toast.error(msg);
         return;
       }
-      if (data?.report) {
-        setReport(data.report);
-        toast.success("Analysis complete");
+      const list: Report[] = data?.subjects?.length ? data.subjects : (data?.report ? [data.report] : []);
+      if (list.length) {
+        setSubjects(list);
+        setActiveIdx(0);
+        toast.success(list.length > 1 ? `Found ${list.length} subjects` : "Analysis complete");
         setTimeout(() => document.getElementById("report")?.scrollIntoView({ behavior: "smooth" }), 100);
       } else if (data?.error) {
         toast.error(data.error);
+      } else {
+        toast.error("Couldn't identify anything in this image.");
       }
     } catch (e) {
       console.error(e);
@@ -95,7 +115,15 @@ function Index() {
     }
   }, []);
 
-  const reset = () => { setImage(null); setReport(null); };
+  const reset = () => { setImage(null); setSubjects(null); setRawImage(null); };
+
+  const chatContext = useMemo(() => {
+    if (!subjects?.length) return null;
+    return subjects.map((s, i) => {
+      const diseases = s.diseases?.map(d => `${d.name} (${d.severity})`).join(", ") || "none detected";
+      return `Subject ${i + 1}: ${s.commonName} (${s.scientificName}) — ${s.kind}. Health: ${s.healthScore}/100. Issues: ${diseases}.`;
+    }).join("\n");
+  }, [subjects]);
 
   return (
     <div className="min-h-screen">
@@ -129,7 +157,7 @@ function Index() {
               that grows or swims.
             </h1>
             <p className="text-lg text-muted-foreground max-w-lg">
-              Identify thousands of plants and fish in seconds. Get expert disease diagnosis, treatment plans and care guides from a single image.
+              Identify thousands of plants and fish in seconds. Get expert disease diagnosis, treatment plans and care guides from a single image — even when several subjects share the frame.
             </p>
             <div className="flex flex-wrap gap-3">
               <Button
@@ -154,6 +182,7 @@ function Index() {
               <span className="flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-primary" /> 10,000+ species</span>
               <span className="flex items-center gap-1.5"><Fish className="w-3.5 h-3.5 text-[oklch(0.78_0.14_215)]" /> Freshwater & saltwater</span>
               <span className="flex items-center gap-1.5"><Stethoscope className="w-3.5 h-3.5 text-[oklch(0.7_0.18_290)]" /> Disease diagnosis</span>
+              <span className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5 text-primary" /> Multi-subject</span>
             </div>
           </div>
 
@@ -186,19 +215,27 @@ function Index() {
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
           <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
 
-          {!image && !loading && (
+          {!rawImage && !image && !loading && (
             <div className="text-center py-10 space-y-4">
               <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-hero flex items-center justify-center shadow-glow animate-pulse-glow">
                 <ScanLine className="w-10 h-10 text-primary-foreground" />
               </div>
               <div>
                 <h2 className="text-2xl font-bold">Drop a photo to scan</h2>
-                <p className="text-muted-foreground text-sm mt-1">Or use the camera and upload buttons above</p>
+                <p className="text-muted-foreground text-sm mt-1">Camera opens to the rear lens. You can crop before scanning.</p>
               </div>
             </div>
           )}
 
-          {(image || loading) && (
+          {rawImage && !loading && (
+            <ImageCropper
+              src={rawImage}
+              onCancel={reset}
+              onConfirm={(cropped) => runAnalysis(cropped)}
+            />
+          )}
+
+          {(image || loading) && !rawImage && (
             <div className="space-y-6">
               <div className="relative mx-auto max-w-md aspect-square rounded-2xl overflow-hidden glass">
                 {image && <img src={image} alt="Subject" className="w-full h-full object-cover" />}
@@ -209,7 +246,7 @@ function Index() {
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                       <Loader2 className="w-8 h-8 text-primary animate-spin" />
                       <div className="text-sm font-medium">Analyzing image…</div>
-                      <div className="text-xs text-muted-foreground">Identifying species & checking health</div>
+                      <div className="text-xs text-muted-foreground">Identifying every subject & checking health</div>
                     </div>
                   </>
                 )}
@@ -223,21 +260,44 @@ function Index() {
           )}
         </Card>
 
-        {report && image && (
-          <div id="report" className="mt-10">
-            <ScanReport report={report} image={image} />
+        {subjects && subjects.length > 0 && image && (
+          <div id="report" className="mt-10 space-y-6">
+            {subjects.length > 1 && (
+              <Card className="glass p-4">
+                <div className="flex items-center gap-2 mb-3 text-sm font-medium">
+                  <Layers className="w-4 h-4 text-primary" />
+                  {subjects.length} subjects detected — tap to view each
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {subjects.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveIdx(i)}
+                      className={`px-3 py-1.5 rounded-full text-xs border transition ${
+                        i === activeIdx
+                          ? "bg-gradient-hero text-primary-foreground border-transparent shadow-glow"
+                          : "glass border-primary/20 hover:border-primary/40"
+                      }`}
+                    >
+                      <span className="font-semibold">#{i + 1}</span> · {s.commonName}
+                    </button>
+                  ))}
+                </div>
+              </Card>
+            )}
+            <ScanReport report={subjects[activeIdx]} image={image} />
           </div>
         )}
 
         {/* Features */}
-        {!report && (
+        {!subjects && (
           <div className="grid md:grid-cols-3 gap-4 mt-12">
             <Feature icon={Leaf} title="Plant identification" desc="Houseplants, garden plants, trees, flowers, herbs, succulents and more." color="text-primary" />
             <Feature icon={Fish} title="Fish identification" desc="Freshwater, saltwater, aquarium and pond species across the globe." color="text-[oklch(0.78_0.14_215)]" />
             <Feature icon={Stethoscope} title="Disease diagnosis" desc="Pinpoint pests, infections, deficiencies — with treatment plans." color="text-[oklch(0.7_0.18_290)]" />
-            <Feature icon={ShieldCheck} title="Care plans" desc="Tailored watering, light, feeding and tank parameters per species." color="text-primary" />
-            <Feature icon={Sparkles} title="Health score" desc="Instant 0–100 health rating with severity-graded findings." color="text-[oklch(0.78_0.14_215)]" />
-            <Feature icon={ScanLine} title="Works on any photo" desc="Camera capture, gallery upload, even drag-and-drop on desktop." color="text-[oklch(0.7_0.18_290)]" />
+            <Feature icon={Layers} title="Multi-subject scans" desc="Several plants or fish in one frame? Each one gets its own report." color="text-primary" />
+            <Feature icon={ShieldCheck} title="Care plans" desc="Tailored watering, light, feeding and tank parameters per species." color="text-[oklch(0.78_0.14_215)]" />
+            <Feature icon={Sparkles} title="AI assistant" desc="Ask follow-up questions — your scan image is auto-attached." color="text-[oklch(0.7_0.18_290)]" />
           </div>
         )}
       </section>
@@ -245,7 +305,7 @@ function Index() {
       <footer className="border-t border-border/50 py-8 text-center text-xs text-muted-foreground">
         BioScan AI · Identifications are for guidance — consult an expert for critical decisions.
       </footer>
-      <ChatBot />
+      <ChatBot image={image} context={chatContext} />
     </div>
   );
 }
