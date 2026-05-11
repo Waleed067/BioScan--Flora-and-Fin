@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageCircle, X, Send, Sparkles, Loader2 } from "lucide-react";
+import { MessageCircle, X, Send, Sparkles, Loader2, ImageIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,7 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
-export function ChatBot() {
+export function ChatBot({ image, context }: { image?: string | null; context?: string | null }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,10 +17,46 @@ export function ChatBot() {
     { role: "assistant", content: "Hi! I'm your **BioScan Assistant** 🌿🐠 — ask me anything about plant care, fish health, diseases, or how to use the scanner." },
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastImageRef = useRef<string | null>(null);
+
+  // When a new scan image arrives, surface a friendly notice in chat
+  useEffect(() => {
+    if (image && image !== lastImageRef.current) {
+      lastImageRef.current = image;
+      setMessages((p) => [
+        ...p,
+        { role: "assistant", content: "📎 Your scan image is attached. Ask me anything about it — diagnosis, treatment, care tips, anything." },
+      ]);
+    }
+    if (!image) lastImageRef.current = null;
+  }, [image]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, open]);
+
+  // Build the payload sent to the backend. When an image is attached, we
+  // prepend a multimodal user turn carrying the image + scan context so the
+  // model can "see" it without the user copy-pasting anything.
+  const buildPayload = (next: Msg[]) => {
+    const base: any[] = [];
+    if (image) {
+      const ctx = context?.trim()
+        ? `Here is the user's recent scan. Use it as context for the conversation.\n\n${context}`
+        : "Here is the user's recent scan image. Use it as visual context for the conversation.";
+      base.push({
+        role: "user",
+        content: [
+          { type: "text", text: ctx },
+          { type: "image_url", image_url: { url: image } },
+        ],
+      });
+      base.push({ role: "assistant", content: "Got it — I can see the scan. What would you like to know?" });
+    }
+    // Only pass the user-visible turns (skip the first greeting & any local notices)
+    const visible = next.filter((m) => !m.content.startsWith("📎"));
+    return [...base, ...visible.slice(1)];
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -37,7 +73,7 @@ export function ChatBot() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: buildPayload(next) }),
       });
 
       if (!resp.ok || !resp.body) {
@@ -92,6 +128,13 @@ export function ChatBot() {
     }
   };
 
+  const attachedBadge = useMemo(() => image ? (
+    <div className="flex items-center gap-2 px-2 py-1 rounded-lg glass border-primary/30 text-[11px]">
+      <img src={image} alt="attached scan" className="w-6 h-6 rounded object-cover" />
+      <span className="text-primary font-medium">Scan attached</span>
+    </div>
+  ) : null, [image]);
+
   return (
     <>
       <button
@@ -100,6 +143,11 @@ export function ChatBot() {
         className="fixed bottom-5 right-5 z-50 w-14 h-14 rounded-full bg-gradient-hero shadow-glow flex items-center justify-center text-primary-foreground hover:scale-105 transition-transform"
       >
         {open ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
+        {image && !open && (
+          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary border-2 border-background flex items-center justify-center">
+            <ImageIcon className="w-2 h-2 text-primary-foreground" />
+          </span>
+        )}
       </button>
 
       <div
@@ -112,12 +160,13 @@ export function ChatBot() {
           <div className="w-8 h-8 rounded-lg bg-gradient-hero flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-primary-foreground" />
           </div>
-          <div>
+          <div className="flex-1">
             <div className="font-semibold text-sm">BioScan Assistant</div>
             <div className="text-[10px] text-muted-foreground flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Online
             </div>
           </div>
+          {attachedBadge}
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -153,7 +202,7 @@ export function ChatBot() {
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about plants or fish…"
+            placeholder={image ? "Ask about your scan…" : "Ask about plants or fish…"}
             disabled={loading}
             className="glass border-primary/20"
           />
