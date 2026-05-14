@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Camera, Upload, Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers, AlertTriangle } from "lucide-react";
+import { Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
