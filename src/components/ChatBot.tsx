@@ -9,7 +9,24 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
-export function ChatBot({ image, context }: { image?: string | null; context?: string | null }) {
+export type ChatBotHandle = {
+  open: () => void;
+  ask: (prompt: string) => void;
+};
+
+export function ChatBot({
+  image,
+  context,
+  openSignal,
+  pendingPrompt,
+  onPromptConsumed,
+}: {
+  image?: string | null;
+  context?: string | null;
+  openSignal?: number;
+  pendingPrompt?: string | null;
+  onPromptConsumed?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,6 +35,15 @@ export function ChatBot({ image, context }: { image?: string | null; context?: s
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastImageRef = useRef<string | null>(null);
+  const lastSignalRef = useRef<number | undefined>(undefined);
+
+  // External open signal (from bottom nav, etc.)
+  useEffect(() => {
+    if (openSignal !== undefined && openSignal !== lastSignalRef.current) {
+      lastSignalRef.current = openSignal;
+      setOpen(true);
+    }
+  }, [openSignal]);
 
   // When a new scan image arrives, surface a friendly notice in chat
   useEffect(() => {
@@ -58,12 +84,12 @@ export function ChatBot({ image, context }: { image?: string | null; context?: s
     return [...base, ...visible.slice(1)];
   };
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (override?: string) => {
+    const text = (override ?? input).trim();
     if (!text || loading) return;
     const next = [...messages, { role: "user" as const, content: text }];
     setMessages(next);
-    setInput("");
+    if (!override) setInput("");
     setLoading(true);
 
     try {
@@ -127,6 +153,16 @@ export function ChatBot({ image, context }: { image?: string | null; context?: s
       setLoading(false);
     }
   };
+
+  // External pending prompt (e.g. from Emergency Symptoms tap)
+  useEffect(() => {
+    if (pendingPrompt && !loading) {
+      setOpen(true);
+      send(pendingPrompt);
+      onPromptConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPrompt]);
 
   const attachedBadge = useMemo(() => image ? (
     <div className="flex items-center gap-2 px-2 py-1 rounded-lg glass border-primary/30 text-[11px]">

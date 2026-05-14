@@ -2,13 +2,16 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Camera, Upload, Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers } from "lucide-react";
+import { Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { ScanReport, type Report } from "@/components/ScanReport";
 import { ChatBot } from "@/components/ChatBot";
 import { ImageCropper } from "@/components/ImageCropper";
+import { ScanHub } from "@/components/ScanHub";
+import { EmergencySymptoms, type SymptomItem } from "@/components/EmergencySymptoms";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 import heroImage from "@/assets/hero.jpg";
 
 export const Route = createFileRoute("/")({
@@ -60,6 +63,9 @@ function Index() {
   const [loading, setLoading] = useState(false);
   const [subjects, setSubjects] = useState<Report[] | null>(null);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [chatOpenSignal, setChatOpenSignal] = useState(0);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [tab, setTab] = useState<"home" | "scan" | "symptoms" | "chat">("home");
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -125,8 +131,24 @@ function Index() {
     }).join("\n");
   }, [subjects]);
 
+  const scrollTo = (id: string) =>
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const handleNav = (t: "home" | "scan" | "symptoms" | "chat") => {
+    setTab(t);
+    if (t === "home") window.scrollTo({ top: 0, behavior: "smooth" });
+    if (t === "scan") scrollTo("scan-hub");
+    if (t === "symptoms") scrollTo("symptoms");
+    if (t === "chat") setChatOpenSignal((n) => n + 1);
+  };
+
+  const askSymptom = (s: SymptomItem) => {
+    setPendingPrompt(s.prompt);
+    toast.success(`Asking AI about: ${s.label}`);
+  };
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen pb-safe-nav md:pb-0">
       <Toaster theme="dark" position="top-center" />
 
       {/* Header */}
@@ -159,24 +181,11 @@ function Index() {
             <p className="text-lg text-muted-foreground max-w-lg">
               Identify thousands of plants and fish in seconds. Get expert disease diagnosis, treatment plans and care guides from a single image — even when several subjects share the frame.
             </p>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                size="lg"
-                onClick={() => cameraRef.current?.click()}
-                className="bg-gradient-hero text-primary-foreground hover:opacity-90 shadow-glow font-semibold"
-              >
-                <Camera className="w-5 h-5" />
-                Open Camera
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => fileRef.current?.click()}
-                className="glass border-primary/30 hover:bg-primary/10"
-              >
-                <Upload className="w-5 h-5" />
-                Upload Photo
-              </Button>
+            <div id="scan-hub" className="pt-1">
+              <ScanHub
+                onCamera={() => cameraRef.current?.click()}
+                onUpload={() => fileRef.current?.click()}
+              />
             </div>
             <div className="flex flex-wrap gap-4 pt-2 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-primary" /> 10,000+ species</span>
@@ -243,10 +252,26 @@ function Index() {
                   <>
                     <div className="absolute inset-0 bg-background/40 backdrop-blur-sm" />
                     <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-primary to-transparent shadow-glow animate-scan" />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                      <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                      <div className="text-sm font-medium">Analyzing image…</div>
-                      <div className="text-xs text-muted-foreground">Identifying every subject & checking health</div>
+                    {/* Radar sweep */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      <div className="absolute inset-8 rounded-full border border-primary/30" />
+                      <div className="absolute inset-16 rounded-full border border-primary/20" />
+                      <div className="absolute inset-24 rounded-full border border-primary/10" />
+                      <div className="absolute inset-0 animate-radar">
+                        <div
+                          className="absolute top-1/2 left-1/2 w-1/2 h-1 origin-left"
+                          style={{ background: "linear-gradient(90deg, oklch(0.78 0.18 165 / 0.7), transparent)" }}
+                        />
+                      </div>
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-primary shadow-glow">
+                        <span className="absolute inset-0 rounded-full bg-primary animate-ring" />
+                      </div>
+                    </div>
+                    <div className="absolute inset-x-0 bottom-4 flex flex-col items-center gap-1">
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> AI Vision Analyzing…
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">Identifying species · Checking health · Building care plan</div>
                     </div>
                   </>
                 )}
@@ -289,6 +314,11 @@ function Index() {
           </div>
         )}
 
+        {/* Emergency Symptoms — always available */}
+        <div id="symptoms" className="mt-12">
+          <EmergencySymptoms onAsk={askSymptom} />
+        </div>
+
         {/* Features */}
         {!subjects && (
           <div className="grid md:grid-cols-3 gap-4 mt-12">
@@ -305,7 +335,14 @@ function Index() {
       <footer className="border-t border-border/50 py-8 text-center text-xs text-muted-foreground">
         BioScan AI · Identifications are for guidance — consult an expert for critical decisions.
       </footer>
-      <ChatBot image={image} context={chatContext} />
+      <ChatBot
+        image={image}
+        context={chatContext}
+        openSignal={chatOpenSignal}
+        pendingPrompt={pendingPrompt}
+        onPromptConsumed={() => setPendingPrompt(null)}
+      />
+      <MobileBottomNav active={tab} onChange={handleNav} />
     </div>
   );
 }
