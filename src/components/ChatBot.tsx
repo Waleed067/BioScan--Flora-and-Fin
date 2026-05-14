@@ -84,12 +84,12 @@ export function ChatBot({
     return [...base, ...visible.slice(1)];
   };
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (override?: string) => {
+    const text = (override ?? input).trim();
     if (!text || loading) return;
     const next = [...messages, { role: "user" as const, content: text }];
     setMessages(next);
-    setInput("");
+    if (!override) setInput("");
     setLoading(true);
 
     try {
@@ -153,6 +153,16 @@ export function ChatBot({
       setLoading(false);
     }
   };
+
+  // External pending prompt (e.g. from Emergency Symptoms tap)
+  useEffect(() => {
+    if (pendingPrompt && !loading) {
+      setOpen(true);
+      send(pendingPrompt);
+      onPromptConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPrompt]);
 
   const attachedBadge = useMemo(() => image ? (
     <div className="flex items-center gap-2 px-2 py-1 rounded-lg glass border-primary/30 text-[11px]">
