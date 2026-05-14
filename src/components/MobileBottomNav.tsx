@@ -1,7 +1,7 @@
-import { Home, ScanLine, Stethoscope, MessageCircle } from "lucide-react";
+import { Home, ScanLine, Stethoscope, MessageCircle, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Tab = "home" | "scan" | "symptoms" | "chat";
+type Tab = "home" | "scan" | "symptoms" | "chat" | "history";
 
 export function MobileBottomNav({
   active,
@@ -12,16 +12,17 @@ export function MobileBottomNav({
 }) {
   const items: { id: Tab; label: string; Icon: any }[] = [
     { id: "home", label: "Home", Icon: Home },
-    { id: "scan", label: "Scan", Icon: ScanLine },
     { id: "symptoms", label: "Symptoms", Icon: Stethoscope },
-    { id: "chat", label: "AI Chat", Icon: MessageCircle },
+    { id: "scan", label: "Scan", Icon: ScanLine },
+    { id: "history", label: "History", Icon: History },
+    { id: "chat", label: "AI", Icon: MessageCircle },
   ];
   return (
     <nav
       className="md:hidden fixed bottom-0 inset-x-0 z-40 glass border-t border-border/60"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      <ul className="grid grid-cols-4">
+      <ul className="grid grid-cols-5">
         {items.map(({ id, label, Icon }) => {
           const isActive = id === active;
           const isCenter = id === "scan";
