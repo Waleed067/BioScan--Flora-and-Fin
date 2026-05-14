@@ -9,7 +9,24 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
-export function ChatBot({ image, context }: { image?: string | null; context?: string | null }) {
+export type ChatBotHandle = {
+  open: () => void;
+  ask: (prompt: string) => void;
+};
+
+export function ChatBot({
+  image,
+  context,
+  openSignal,
+  pendingPrompt,
+  onPromptConsumed,
+}: {
+  image?: string | null;
+  context?: string | null;
+  openSignal?: number;
+  pendingPrompt?: string | null;
+  onPromptConsumed?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,6 +35,15 @@ export function ChatBot({ image, context }: { image?: string | null; context?: s
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastImageRef = useRef<string | null>(null);
+  const lastSignalRef = useRef<number | undefined>(undefined);
+
+  // External open signal (from bottom nav, etc.)
+  useEffect(() => {
+    if (openSignal !== undefined && openSignal !== lastSignalRef.current) {
+      lastSignalRef.current = openSignal;
+      setOpen(true);
+    }
+  }, [openSignal]);
 
   // When a new scan image arrives, surface a friendly notice in chat
   useEffect(() => {
