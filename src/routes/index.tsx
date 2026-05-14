@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers } from "lucide-react";
+import { Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers, History, LogOut, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,6 +12,8 @@ import { ImageCropper } from "@/components/ImageCropper";
 import { ScanHub } from "@/components/ScanHub";
 import { EmergencySymptoms, type SymptomItem } from "@/components/EmergencySymptoms";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { useAuth, signOut } from "@/hooks/useAuth";
+import { saveScan } from "@/lib/saveScan";
 import heroImage from "@/assets/hero.jpg";
 
 export const Route = createFileRoute("/")({
@@ -56,6 +58,8 @@ async function compressDataUrl(dataUrl: string, max = 1600, quality = 0.88): Pro
 }
 
 function Index() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [rawImage, setRawImage] = useState<string | null>(null); // before crop
@@ -65,7 +69,7 @@ function Index() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [chatOpenSignal, setChatOpenSignal] = useState(0);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
-  const [tab, setTab] = useState<"home" | "scan" | "symptoms" | "chat">("home");
+  const [tab, setTab] = useState<"home" | "scan" | "symptoms" | "chat" | "history">("home");
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -108,6 +112,11 @@ function Index() {
         setActiveIdx(0);
         toast.success(list.length > 1 ? `Found ${list.length} subjects` : "Analysis complete");
         setTimeout(() => document.getElementById("report")?.scrollIntoView({ behavior: "smooth" }), 100);
+        if (user) {
+          saveScan({ userId: user.id, imageDataUrl: cropped, subjects: list })
+            .then(() => toast.success("Saved to your history"))
+            .catch((e) => console.error("saveScan failed", e));
+        }
       } else if (data?.error) {
         toast.error(data.error);
       } else {
@@ -119,7 +128,7 @@ function Index() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   const reset = () => { setImage(null); setSubjects(null); setRawImage(null); };
 
@@ -134,12 +143,13 @@ function Index() {
   const scrollTo = (id: string) =>
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  const handleNav = (t: "home" | "scan" | "symptoms" | "chat") => {
+  const handleNav = (t: "home" | "scan" | "symptoms" | "chat" | "history") => {
     setTab(t);
     if (t === "home") window.scrollTo({ top: 0, behavior: "smooth" });
     if (t === "scan") scrollTo("scan-hub");
     if (t === "symptoms") scrollTo("symptoms");
     if (t === "chat") setChatOpenSignal((n) => n + 1);
+    if (t === "history") navigate({ to: user ? "/history" : "/login" });
   };
 
   const askSymptom = (s: SymptomItem) => {
@@ -153,15 +163,28 @@ function Index() {
 
       {/* Header */}
       <header className="container mx-auto px-4 py-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2">
           <div className="w-9 h-9 rounded-xl bg-gradient-hero flex items-center justify-center shadow-glow">
             <Sparkles className="w-5 h-5 text-primary-foreground" />
           </div>
           <span className="font-bold text-lg tracking-tight">BioScan<span className="text-gradient">AI</span></span>
-        </div>
-        <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground glass px-3 py-1.5 rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-          AI vision online
+        </Link>
+        <div className="flex items-center gap-2">
+          {user ? (
+            <>
+              <Link to="/history" className="glass px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5 hover:shadow-glow transition">
+                <History className="w-3.5 h-3.5 text-primary" /> History
+              </Link>
+              <button onClick={() => signOut()} className="glass px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5" aria-label="Sign out">
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sign out</span>
+              </button>
+            </>
+          ) : (
+            <Link to="/login" className="glass px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5 hover:shadow-glow transition">
+              <UserIcon className="w-3.5 h-3.5 text-primary" /> Sign in
+            </Link>
+          )}
         </div>
       </header>
 
