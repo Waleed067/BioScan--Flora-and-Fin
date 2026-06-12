@@ -49,6 +49,7 @@ export type Database = {
           id: string
           image_url: string | null
           notes: string | null
+          parent_scan_id: string | null
           scan_type: string
           title: string | null
           updated_at: string
@@ -61,6 +62,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           notes?: string | null
+          parent_scan_id?: string | null
           scan_type: string
           title?: string | null
           updated_at?: string
@@ -73,12 +75,21 @@ export type Database = {
           id?: string
           image_url?: string | null
           notes?: string | null
+          parent_scan_id?: string | null
           scan_type?: string
           title?: string | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "scans_parent_scan_id_fkey"
+            columns: ["parent_scan_id"]
+            isOneToOne: false
+            referencedRelation: "scans"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
