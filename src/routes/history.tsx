@@ -87,21 +87,23 @@ function HistoryPage() {
 
       <div className="grid gap-3">
         {filtered?.map((r) => (
-          <Card key={r.id} className="glass p-3 flex items-center gap-3">
-            {r.image_url ? (
-              <img src={r.image_url} alt={r.title ?? "scan"} className="w-16 h-16 rounded-xl object-cover" />
-            ) : (
-              <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center">
-                {r.scan_type === "fish" ? <Fish className="w-6 h-6" /> : <Leaf className="w-6 h-6" />}
+          <Card key={r.id} className="glass p-3 flex items-center gap-3 hover:shadow-glow transition">
+            <Link to="/scan/$id" params={{ id: r.id }} className="flex items-center gap-3 flex-1 min-w-0">
+              {r.image_url ? (
+                <img src={r.image_url} alt={r.title ?? "scan"} className="w-16 h-16 rounded-xl object-cover" />
+              ) : (
+                <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center">
+                  {r.scan_type === "fish" ? <Fish className="w-6 h-6" /> : <Leaf className="w-6 h-6" />}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold truncate">{r.title ?? "Untitled"}</div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(r.created_at).toLocaleString()} · {r.scan_type}
+                  {r.health_score != null && ` · Health ${r.health_score}/100`}
+                </div>
               </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold truncate">{r.title ?? "Untitled"}</div>
-              <div className="text-xs text-muted-foreground">
-                {new Date(r.created_at).toLocaleString()} · {r.scan_type}
-                {r.health_score != null && ` · Health ${r.health_score}/100`}
-              </div>
-            </div>
+            </Link>
             <Button size="icon" variant="ghost" onClick={() => remove(r.id)} aria-label="Delete">
               <Trash2 className="w-4 h-4" />
             </Button>

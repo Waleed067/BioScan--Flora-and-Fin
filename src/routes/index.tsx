@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers, History, LogOut, User as UserIcon } from "lucide-react";
+import { Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers, History, LogOut, User as UserIcon, LayoutDashboard, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,6 +14,7 @@ import { EmergencySymptoms, type SymptomItem } from "@/components/EmergencySympt
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { useAuth, signOut } from "@/hooks/useAuth";
 import { saveScan } from "@/lib/saveScan";
+import { exportReportPdf } from "@/lib/exportPdf";
 import heroImage from "@/assets/hero.jpg";
 
 export const Route = createFileRoute("/")({
@@ -70,6 +71,18 @@ function Index() {
   const [chatOpenSignal, setChatOpenSignal] = useState(0);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [tab, setTab] = useState<"home" | "scan" | "symptoms" | "chat" | "history">("home");
+  const [followUpId, setFollowUpId] = useState<string | null>(null);
+
+  // Detect follow-up scan request via ?followUp=<scanId>
+  useMemo(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const f = sp.get("followUp");
+    if (f) {
+      setFollowUpId(f);
+      toast.success("Follow-up scan mode — your new photo will be linked to the original.");
+    }
+  }, []);
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -113,9 +126,10 @@ function Index() {
         toast.success(list.length > 1 ? `Found ${list.length} subjects` : "Analysis complete");
         setTimeout(() => document.getElementById("report")?.scrollIntoView({ behavior: "smooth" }), 100);
         if (user) {
-          saveScan({ userId: user.id, imageDataUrl: cropped, subjects: list })
+          saveScan({ userId: user.id, imageDataUrl: cropped, subjects: list, parentScanId: followUpId })
             .then(() => toast.success("Saved to your history"))
             .catch((e) => console.error("saveScan failed", e));
+          if (followUpId) setFollowUpId(null);
         }
       } else if (data?.error) {
         toast.error(data.error);
@@ -128,7 +142,7 @@ function Index() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, followUpId]);
 
   const reset = () => { setImage(null); setSubjects(null); setRawImage(null); };
 
@@ -172,6 +186,9 @@ function Index() {
         <div className="flex items-center gap-2">
           {user ? (
             <>
+              <Link to="/dashboard" className="glass px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5 hover:shadow-glow transition">
+                <LayoutDashboard className="w-3.5 h-3.5 text-primary" /> <span className="hidden sm:inline">Dashboard</span>
+              </Link>
               <Link to="/history" className="glass px-3 py-1.5 rounded-full text-xs flex items-center gap-1.5 hover:shadow-glow transition">
                 <History className="w-3.5 h-3.5 text-primary" /> History
               </Link>
