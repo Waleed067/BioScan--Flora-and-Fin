@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useRef, useState, useCallback, useMemo } from "react";
+import { useRef, useState, useCallback, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2, Leaf, Fish, Sparkles, ScanLine, Stethoscope, ShieldCheck, RotateCcw, Layers, History, LogOut, User as UserIcon, LayoutDashboard, Download } from "lucide-react";
@@ -74,7 +74,7 @@ function Index() {
   const [followUpId, setFollowUpId] = useState<string | null>(null);
 
   // Detect follow-up scan request via ?followUp=<scanId>
-  useMemo(() => {
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
     const f = sp.get("followUp");
