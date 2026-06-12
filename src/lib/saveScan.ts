@@ -14,8 +14,9 @@ export async function saveScan(opts: {
   userId: string;
   imageDataUrl: string;
   subjects: Report[];
+  parentScanId?: string | null;
 }) {
-  const { userId, imageDataUrl, subjects } = opts;
+  const { userId, imageDataUrl, subjects, parentScanId } = opts;
   const primary = subjects[0];
   const blob = dataUrlToBlob(imageDataUrl);
   const path = `${userId}/${Date.now()}.jpg`;
@@ -31,6 +32,7 @@ export async function saveScan(opts: {
     image_url: pub.publicUrl,
     diagnosis: { subjects } as any,
     health_score: primary?.healthScore ?? null,
-  });
+    ...(parentScanId ? { parent_scan_id: parentScanId } : {}),
+  } as any);
   if (insErr) throw insErr;
 }
