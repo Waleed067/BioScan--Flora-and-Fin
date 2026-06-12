@@ -319,6 +319,15 @@ function Index() {
               {!loading && (
                 <div className="flex justify-center gap-3">
                   <Button variant="outline" onClick={reset} className="glass"><RotateCcw className="w-4 h-4" /> New scan</Button>
+                  {subjects && subjects[activeIdx] && (
+                    <Button
+                      variant="outline"
+                      className="glass"
+                      onClick={() => exportReportPdf(subjects[activeIdx], image).catch(() => toast.error("PDF export failed"))}
+                    >
+                      <Download className="w-4 h-4" /> Download PDF
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
