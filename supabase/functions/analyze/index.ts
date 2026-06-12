@@ -3,12 +3,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM = `You are an elite botanist, ichthyologist and plant/fish pathology expert.
+const SYSTEM = `You are an elite botanist, ichthyologist and plant/fish pathology expert with decades of taxonomic field experience.
 You receive ONE photo that may contain ONE OR MORE subjects (plants and/or fish).
-Identify EVERY distinct subject visible in the image and return one entry per subject in the "subjects" array.
-If multiple instances of the exact same species appear together as a single group, you may combine them into one entry (mention the count in the summary).
-For each subject decide if it is a PLANT or a FISH (or "unknown"), identify the species, and assess health/diseases. Be specific, accurate, practical.
-Respond ONLY by calling the provided tool.`;
+
+IDENTIFICATION RULES — accuracy over guessing:
+1. Examine the image carefully: leaf shape, venation, flowers, growth habit (plants); body shape, fin configuration, coloration, scale pattern (fish).
+2. Cross-check distinguishing features before naming a species. If two species are visually similar, pick the more common one ONLY if features clearly match; otherwise stay at genus level.
+3. Confidence scoring (0–100) MUST reflect real visual evidence:
+   - 85–100: clear, diagnostic features visible, species unambiguous.
+   - 60–84: probable species, minor ambiguity.
+   - 40–59: only genus/family is reliable — put the genus or family in commonName and note uncertainty in summary.
+   - Below 40: set kind to "unknown", commonName to "Unable to identify with sufficient confidence", and explain what's blocking identification (blur, lighting, angle, partial view) in summary. Return empty diseases array.
+4. For blurry, dark, partially-occluded or low-quality images, lower confidence accordingly — never inflate it.
+5. Disease diagnosis must be evidence-based. Only list a condition if visible symptoms support it. If the subject looks healthy, return an empty diseases array and healthStatus "healthy".
+6. Identify EVERY distinct subject. If many instances of the same species are grouped, combine into one entry and mention the count.
+7. Use accepted scientific binomial names. Common names should be the widely-used English name.
+
+Respond ONLY by calling the provided tool. Be specific, accurate, and honest about uncertainty.`;
 
 const subjectSchema = {
   type: "object",
@@ -87,16 +98,17 @@ Deno.serve(async (req) => {
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-pro",
         messages: [
           { role: "system", content: SYSTEM },
           { role: "user", content: [
-            { type: "text", text: "Identify and diagnose EVERY distinct plant or fish in this image. Return one entry per subject in the subjects array." },
+            { type: "text", text: "Identify and diagnose EVERY distinct plant or fish in this image. Examine diagnostic features carefully. Set realistic confidence based on actual visual evidence — do NOT guess. If the image is unclear or features are not diagnostic, return kind=unknown with a low confidence rather than fabricating a species." },
             { type: "image_url", image_url: { url: image } }
           ]}
         ],
         tools: [tool],
-        tool_choice: { type: "function", function: { name: "report" } }
+        tool_choice: { type: "function", function: { name: "report" } },
+        temperature: 0.2
       })
     });
 
@@ -112,7 +124,26 @@ Deno.serve(async (req) => {
     const call = data.choices?.[0]?.message?.tool_calls?.[0];
     if (!call) throw new Error("No structured response from AI");
     const parsed = JSON.parse(call.function.arguments);
-    const subjects = Array.isArray(parsed.subjects) ? parsed.subjects : [];
+    const rawSubjects = Array.isArray(parsed.subjects) ? parsed.subjects : [];
+    // Confidence gating: anything under 40 is forced to "unknown" with safe defaults
+    const subjects = rawSubjects.map((s: any) => {
+      const conf = typeof s.confidence === "number" ? s.confidence : 0;
+      if (conf < 40) {
+        return {
+          ...s,
+          kind: "unknown",
+          commonName: "Unable to identify with sufficient confidence",
+          scientificName: s.scientificName || "—",
+          confidence: conf,
+          healthStatus: "unknown",
+          healthScore: s.healthScore ?? 0,
+          diseases: [],
+          summary: s.summary || "The image quality, angle, or visibility is insufficient for a confident identification. Try a closer, sharper, well-lit photo of the subject.",
+          care: s.care || {},
+        };
+      }
+      return s;
+    });
 
     return new Response(JSON.stringify({ subjects, sceneSummary: parsed.sceneSummary ?? null, report: subjects[0] ?? null }), { headers: { ...corsHeaders, "Content-Type": "application/json" }});
   } catch (e) {
