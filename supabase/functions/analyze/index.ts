@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
     // Confidence gating: anything under 40 is forced to "unknown" with safe defaults
     const subjects = rawSubjects.map((s: any) => {
       const conf = typeof s.confidence === "number" ? s.confidence : 0;
-      if (conf < 40) {
+      if (conf < 50) {
         return {
           ...s,
           kind: "unknown",
