@@ -5,13 +5,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Toaster } from "@/components/ui/sonner";
 import { Loader2, ArrowLeft, Sparkles, Activity, Heart, Flame, Layers, Leaf, Fish, TrendingUp } from "lucide-react";
+import { resolveScanImageUrls } from "@/lib/scanImage";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — BioScan AI" }] }),
   component: DashboardPage,
 });
 
-type Row = { id: string; scan_type: string; title: string | null; image_url: string | null; health_score: number | null; created_at: string };
+type Row = { id: string; scan_type: string; title: string | null; image_url: string | null; health_score: number | null; created_at: string; resolved_url?: string | null };
 
 function computeStreak(dates: string[]): number {
   if (!dates.length) return 0;
@@ -36,7 +37,7 @@ function DashboardPage() {
     if (!user) { nav({ to: "/login" }); return; }
     supabase.from("scans").select("id,scan_type,title,image_url,health_score,created_at")
       .order("created_at", { ascending: false })
-      .then(({ data }) => setRows((data as Row[]) ?? []));
+      .then(async ({ data }) => setRows((await resolveScanImageUrls((data as Row[]) ?? [])) as Row[]));
   }, [user, loading, nav]);
 
   if (!rows) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
@@ -91,7 +92,7 @@ function DashboardPage() {
           {recent.map((r) => (
             <Link key={r.id} to="/scan/$id" params={{ id: r.id }} className="block">
               <Card className="glass overflow-hidden hover:shadow-glow transition group">
-                {r.image_url && <img src={r.image_url} alt={r.title ?? ""} className="w-full aspect-video object-cover group-hover:scale-105 transition" />}
+                {r.resolved_url && <img src={r.resolved_url} alt={r.title ?? ""} className="w-full aspect-video object-cover group-hover:scale-105 transition" />}
                 <div className="p-3">
                   <div className="font-semibold truncate text-sm">{r.title ?? "Untitled"}</div>
                   <div className="text-[11px] text-muted-foreground">{new Date(r.created_at).toLocaleDateString()} · Health {r.health_score ?? "—"}/100</div>
