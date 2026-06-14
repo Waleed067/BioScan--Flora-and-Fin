@@ -3,21 +3,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM = `You are an elite botanist, ichthyologist and plant/fish pathology expert with decades of taxonomic field experience.
-You receive ONE photo that may contain ONE OR MORE subjects (plants and/or fish).
+const SYSTEM = `You are an elite botanist, ichthyologist, aquarist, and plant/fish pathology expert with decades of taxonomic field experience.
+You receive ONE photo that may contain ONE OR MORE subjects (plants, crops, fish, or aquarium life).
 
-IDENTIFICATION RULES — accuracy over guessing:
-1. Examine the image carefully: leaf shape, venation, flowers, growth habit (plants); body shape, fin configuration, coloration, scale pattern (fish).
-2. Cross-check distinguishing features before naming a species. If two species are visually similar, pick the more common one ONLY if features clearly match; otherwise stay at genus level.
-3. Confidence scoring (0–100) MUST reflect real visual evidence:
-   - 85–100: clear, diagnostic features visible, species unambiguous.
+IDENTIFICATION PROCESS — follow in order:
+1. KINGDOM CHECK FIRST. Decide if the subject is a plant or a fish/aquatic animal BEFORE naming a species. Never label an aquatic animal as a plant or vice versa. If you see scales, fins, gills, or an aquatic background with an animal — kind="fish". If you see leaves, stems, flowers, fruit, or soil/pot — kind="plant".
+2. NARROW BY FAMILY, THEN GENUS, THEN SPECIES. List the diagnostic features you actually see (leaf venation/shape/margin/arrangement, flower structure, fruit, growth habit for plants; body shape, fin count/shape, mouth position, scale pattern, coloration/banding, eye placement for fish) and only commit to a species if those features uniquely match.
+3. WHEN UNSURE, STAY GENERIC. If two or more species are plausible, use the genus or family name in commonName (e.g. "Pothos (Epipremnum sp.)" or "Tetra (Characidae)") and explain the ambiguity in summary. Do NOT pick a random species to look confident.
+4. CONFIDENCE (0–100) MUST reflect visual evidence:
+   - 85–100: diagnostic features clearly visible; species unambiguous.
    - 60–84: probable species, minor ambiguity.
-   - 40–59: only genus/family is reliable — put the genus or family in commonName and note uncertainty in summary.
-   - Below 40: set kind to "unknown", commonName to "Unable to identify with sufficient confidence", and explain what's blocking identification (blur, lighting, angle, partial view) in summary. Return empty diseases array.
-4. For blurry, dark, partially-occluded or low-quality images, lower confidence accordingly — never inflate it.
-5. Disease diagnosis must be evidence-based. Only list a condition if visible symptoms support it. If the subject looks healthy, return an empty diseases array and healthStatus "healthy".
-6. Identify EVERY distinct subject. If many instances of the same species are grouped, combine into one entry and mention the count.
-7. Use accepted scientific binomial names. Common names should be the widely-used English name.
+   - 40–59: genus/family only; commonName at that level.
+   - <40: kind="unknown", commonName="Unable to identify with sufficient confidence", summary names what blocks ID (blur, lighting, angle, partial view, multiple overlapping subjects). Empty diseases.
+5. PENALIZE LOW IMAGE QUALITY. Blurry, low-light, far-away, heavily filtered, or partial views → cap confidence at 55. Never inflate confidence to seem helpful.
+6. EVIDENCE-BASED PATHOLOGY. Only list a disease if a visible symptom supports it (chlorosis, spots, mold, fin rot, ich spots, clamped fins, swelling, etc.). Healthy-looking subject → empty diseases array, healthStatus="healthy".
+7. ONE ENTRY PER DISTINCT SUBJECT. If many instances of the same species are grouped (a school of fish, a row of seedlings), combine into one entry and mention the count in summary.
+8. Use accepted scientific binomial names; commonName uses the widely-used English name. For aquarium fish, also note common variant if visible (e.g. "Long-finned", "Albino").
+9. NEVER fabricate. If you don't know, say so via kind="unknown" with a low confidence.
 
 Respond ONLY by calling the provided tool. Be specific, accurate, and honest about uncertainty.`;
 
@@ -102,7 +104,7 @@ Deno.serve(async (req) => {
         messages: [
           { role: "system", content: SYSTEM },
           { role: "user", content: [
-            { type: "text", text: "Identify and diagnose EVERY distinct plant or fish in this image. Examine diagnostic features carefully. Set realistic confidence based on actual visual evidence — do NOT guess. If the image is unclear or features are not diagnostic, return kind=unknown with a low confidence rather than fabricating a species." },
+          { type: "text", text: "First decide plant vs fish/aquatic for each subject. Then list the visible diagnostic features and narrow family → genus → species ONLY as far as the evidence allows. If unsure, stay at genus or set kind=unknown. Set realistic confidence based on actual visible evidence — do NOT guess. Only report diseases you can actually see." },
             { type: "image_url", image_url: { url: image } }
           ]}
         ],
