@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { Loader2, Search, Trash2, ArrowLeft, Sparkles, Leaf, Fish } from "lucide-react";
+import { resolveScanImageUrls } from "@/lib/scanImage";
 
 export const Route = createFileRoute("/history")({
   head: () => ({ meta: [{ title: "Scan History — BioScan AI" }] }),
@@ -22,6 +23,7 @@ type ScanRow = {
   health_score: number | null;
   created_at: string;
   diagnosis: any;
+  resolved_url?: string | null;
 };
 
 function HistoryPage() {
@@ -40,9 +42,9 @@ function HistoryPage() {
       .from("scans")
       .select("id,scan_type,title,image_url,health_score,created_at,diagnosis")
       .order("created_at", { ascending: false })
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (error) toast.error(error.message);
-        else setRows((data as ScanRow[]) ?? []);
+        else setRows((await resolveScanImageUrls((data as ScanRow[]) ?? [])) as ScanRow[]);
       });
   }, [user, loading, nav]);
 
@@ -89,8 +91,8 @@ function HistoryPage() {
         {filtered?.map((r) => (
           <Card key={r.id} className="glass p-3 flex items-center gap-3 hover:shadow-glow transition">
             <Link to="/scan/$id" params={{ id: r.id }} className="flex items-center gap-3 flex-1 min-w-0">
-              {r.image_url ? (
-                <img src={r.image_url} alt={r.title ?? "scan"} className="w-16 h-16 rounded-xl object-cover" />
+              {r.resolved_url ? (
+                <img src={r.resolved_url} alt={r.title ?? "scan"} className="w-16 h-16 rounded-xl object-cover" />
               ) : (
                 <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center">
                   {r.scan_type === "fish" ? <Fish className="w-6 h-6" /> : <Leaf className="w-6 h-6" />}

@@ -24,12 +24,11 @@ export async function saveScan(opts: {
     .from("scan-images")
     .upload(path, blob, { contentType: blob.type, upsert: false });
   if (upErr) throw upErr;
-  const { data: pub } = supabase.storage.from("scan-images").getPublicUrl(path);
   const { error: insErr } = await supabase.from("scans").insert({
     user_id: userId,
     scan_type: primary?.kind ?? "unknown",
     title: primary?.commonName ?? "Scan",
-    image_url: pub.publicUrl,
+    image_url: path,
     diagnosis: { subjects } as any,
     health_score: primary?.healthScore ?? null,
     ...(parentScanId ? { parent_scan_id: parentScanId } : {}),

@@ -10,6 +10,7 @@ import { Loader2, ArrowLeft, Download, Camera, History as HistoryIcon } from "lu
 import { ScanReport, type Report } from "@/components/ScanReport";
 import { BeforeAfter } from "@/components/BeforeAfter";
 import { exportReportPdf } from "@/lib/exportPdf";
+import { resolveScanImageUrl, resolveScanImageUrls } from "@/lib/scanImage";
 
 export const Route = createFileRoute("/scan/$id")({
   head: () => ({ meta: [{ title: "Scan Detail — BioScan AI" }] }),
@@ -26,6 +27,7 @@ type ScanRow = {
   created_at: string;
   diagnosis: any;
   parent_scan_id?: string | null;
+  resolved_url?: string | null;
 };
 
 function ScanDetailPage() {
@@ -43,15 +45,20 @@ function ScanDetailPage() {
     (async () => {
       const { data, error } = await supabase.from("scans").select("*").eq("id", id).maybeSingle();
       if (error || !data) { toast.error("Scan not found"); return; }
-      setRow(data as ScanRow);
       const r = data as ScanRow;
+      r.resolved_url = await resolveScanImageUrl(r.image_url);
+      setRow(r);
       if (r.parent_scan_id) {
         const { data: parent } = await supabase.from("scans").select("*").eq("id", r.parent_scan_id).maybeSingle();
-        if (parent) setOriginal(parent as ScanRow);
+        if (parent) {
+          const p = parent as ScanRow;
+          p.resolved_url = await resolveScanImageUrl(p.image_url);
+          setOriginal(p);
+        }
       }
       const rootId = r.parent_scan_id ?? r.id;
       const { data: kids } = await supabase.from("scans").select("*").eq("parent_scan_id", rootId).order("created_at");
-      setFollowUps((kids as ScanRow[]) ?? []);
+      setFollowUps(((await resolveScanImageUrls((kids as ScanRow[]) ?? [])) as ScanRow[]));
     })();
   }, [id, user, loading, nav]);
 
@@ -63,7 +70,7 @@ function ScanDetailPage() {
   const downloadPdf = async () => {
     if (!primary) return toast.error("No report data");
     setBusy(true);
-    try { await exportReportPdf(primary, row.image_url); toast.success("PDF downloaded"); }
+    try { await exportReportPdf(primary, row.resolved_url ?? row.image_url); toast.success("PDF downloaded"); }
     catch (e) { console.error(e); toast.error("PDF export failed"); }
     finally { setBusy(false); }
   };
@@ -92,12 +99,12 @@ function ScanDetailPage() {
         </div>
       </div>
 
-      {row.image_url && compareTarget?.image_url && (
+      {row.resolved_url && compareTarget?.resolved_url && (
         <Card className="glass p-4 mb-6">
           <div className="text-sm font-semibold mb-2 flex items-center gap-2"><HistoryIcon className="w-4 h-4 text-primary" /> Recovery comparison</div>
           <BeforeAfter
-            before={(original ?? compareTarget).image_url!}
-            after={original ? row.image_url : compareTarget.image_url!}
+            before={(original ?? compareTarget).resolved_url!}
+            after={original ? row.resolved_url! : compareTarget.resolved_url!}
             beforeLabel={`Before · ${new Date((original ?? compareTarget).created_at).toLocaleDateString()}`}
             afterLabel={`After · ${new Date((original ? row : compareTarget).created_at).toLocaleDateString()}`}
           />
@@ -114,7 +121,7 @@ function ScanDetailPage() {
           <div className="flex gap-2 overflow-x-auto pb-2">
             {[original ?? row, ...followUps.filter((f) => f.id !== (original ?? row).id)].map((s) => (
               <Link key={s.id} to="/scan/$id" params={{ id: s.id }} className={`shrink-0 ${s.id === row.id ? "ring-2 ring-primary rounded-xl" : ""}`}>
-                {s.image_url && <img src={s.image_url} alt="" className="w-20 h-20 rounded-xl object-cover" />}
+                {s.resolved_url && <img src={s.resolved_url} alt="" className="w-20 h-20 rounded-xl object-cover" />}
                 <div className="text-[10px] text-center mt-1">{new Date(s.created_at).toLocaleDateString()}</div>
               </Link>
             ))}
@@ -122,7 +129,7 @@ function ScanDetailPage() {
         </Card>
       )}
 
-      {primary && row.image_url && <ScanReport report={primary} image={row.image_url} />}
+      {primary && row.resolved_url && <ScanReport report={primary} image={row.resolved_url} />}
     </div>
   );
 }
