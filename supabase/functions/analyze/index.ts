@@ -214,7 +214,7 @@ Deno.serve(async (req) => {
       return s;
     });
 
-    return new Response(JSON.stringify({ subjects, sceneSummary: parsed.sceneSummary ?? null, report: subjects[0] ?? null }), { headers: { ...corsHeaders, "Content-Type": "application/json" }});
+    return new Response(JSON.stringify({ subjects, sceneSummary: null, report: subjects[0] ?? null }), { headers: { ...corsHeaders, "Content-Type": "application/json" }});
   } catch (e) {
     console.error(e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }});
