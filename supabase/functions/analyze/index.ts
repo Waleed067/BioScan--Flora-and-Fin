@@ -96,37 +96,104 @@ Deno.serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
-        messages: [
-          { role: "system", content: SYSTEM },
-          { role: "user", content: [
-          { type: "text", text: "First decide plant vs fish/aquatic for each subject. Then list the visible diagnostic features and narrow family → genus → species ONLY as far as the evidence allows. If unsure, stay at genus or set kind=unknown. Set realistic confidence based on actual visible evidence — do NOT guess. Only report diseases you can actually see." },
-            { type: "image_url", image_url: { url: image } }
-          ]}
-        ],
-        tools: [tool],
-        tool_choice: { type: "function", function: { name: "report" } },
-        temperature: 0.2
-      })
-    });
+    const callModel = async (model: string) => {
+      const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: SYSTEM },
+            { role: "user", content: [
+              { type: "text", text: "First decide plant vs fish/aquatic for each subject. Then list the visible diagnostic features and narrow family → genus → species ONLY as far as the evidence allows. If unsure, stay at genus or set kind=unknown. Set realistic confidence based on actual visible evidence — do NOT guess. Only report diseases you can actually see." },
+              { type: "image_url", image_url: { url: image } }
+            ]}
+          ],
+          tools: [tool],
+          tool_choice: { type: "function", function: { name: "report" } },
+          temperature: 0.2
+        })
+      });
+      return r;
+    };
 
-    if (!resp.ok) {
-      if (resp.status === 429) return new Response(JSON.stringify({ error: "Rate limit reached. Please wait a moment and try again." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" }});
-      if (resp.status === 402) return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits in Lovable workspace settings." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" }});
-      const t = await resp.text();
-      console.error("Gateway error", resp.status, t);
+    // Dual-model cross verification: run two strong vision models in parallel.
+    const [respA, respB] = await Promise.all([
+      callModel("google/gemini-2.5-pro"),
+      callModel("openai/gpt-5"),
+    ]);
+
+    const primary = respA.ok ? respA : respB;
+    if (!primary.ok) {
+      if (primary.status === 429) return new Response(JSON.stringify({ error: "Rate limit reached. Please wait a moment and try again." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" }});
+      if (primary.status === 402) return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits in Lovable workspace settings." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" }});
+      const t = await primary.text();
+      console.error("Gateway error", primary.status, t);
       return new Response(JSON.stringify({ error: "AI service error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }});
     }
 
-    const data = await resp.json();
-    const call = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!call) throw new Error("No structured response from AI");
-    const parsed = JSON.parse(call.function.arguments);
-    const rawSubjects = Array.isArray(parsed.subjects) ? parsed.subjects : [];
+    const extract = async (r: Response) => {
+      if (!r.ok) return [] as any[];
+      try {
+        const d = await r.json();
+        const call = d.choices?.[0]?.message?.tool_calls?.[0];
+        if (!call) return [];
+        const p = JSON.parse(call.function.arguments);
+        return Array.isArray(p.subjects) ? p.subjects : [];
+      } catch { return []; }
+    };
+
+    const [subjA, subjB] = await Promise.all([extract(respA), extract(respB)]);
+    const norm = (s: string) => (s || "").toLowerCase().replace(/[^a-z\s]/g, "").trim();
+    const genus = (sci: string) => norm(sci).split(/\s+/)[0] || "";
+
+    // Merge: pair subjects from A and B by closest scientific match; reconcile.
+    const used = new Set<number>();
+    const merged: any[] = [];
+    for (const a of subjA) {
+      let matchIdx = -1;
+      for (let i = 0; i < subjB.length; i++) {
+        if (used.has(i)) continue;
+        const b = subjB[i];
+        if (a.kind === b.kind && (norm(a.scientificName) === norm(b.scientificName) || genus(a.scientificName) === genus(b.scientificName))) {
+          matchIdx = i; break;
+        }
+      }
+      const b = matchIdx >= 0 ? subjB[matchIdx] : null;
+      if (b) used.add(matchIdx);
+
+      if (!b) {
+        // Only one model saw this subject — keep but cap confidence.
+        merged.push({ ...a, confidence: Math.min(a.confidence ?? 0, 55), summary: (a.summary || "") + " (Single-model identification; one verifier did not confirm — treat as tentative.)" });
+        continue;
+      }
+      const kindAgrees = a.kind === b.kind;
+      const speciesAgrees = norm(a.scientificName) === norm(b.scientificName);
+      const genusAgrees = genus(a.scientificName) === genus(b.scientificName);
+      const avgConf = Math.round(((a.confidence ?? 0) + (b.confidence ?? 0)) / 2);
+
+      if (!kindAgrees) {
+        merged.push({ ...a, kind: "unknown", commonName: "Unable to identify with sufficient confidence", confidence: Math.min(avgConf, 35), healthStatus: "unknown", diseases: [], summary: "Verifier models disagreed on whether this is a plant or a fish. Please take a clearer, closer photo." });
+      } else if (speciesAgrees) {
+        // Strong agreement — boost confidence slightly.
+        merged.push({ ...a, confidence: Math.min(99, Math.max(avgConf, Math.max(a.confidence ?? 0, b.confidence ?? 0)) + 5), summary: (a.summary || "") + " (Cross-verified by two independent vision models.)" });
+      } else if (genusAgrees) {
+        // Same genus but different species — downgrade to genus.
+        const g = (a.scientificName || "").split(/\s+/)[0] || a.scientificName;
+        merged.push({ ...a, scientificName: `${g} sp.`, commonName: `${a.commonName || g} (genus-level)`, confidence: Math.min(avgConf, 60), summary: (a.summary || "") + ` Models disagreed on the exact species (candidates: ${a.scientificName} vs ${b.scientificName}); identification kept at genus level.` });
+      } else {
+        // Full disagreement — fall back to unknown.
+        merged.push({ ...a, kind: "unknown", commonName: "Unable to identify with sufficient confidence", scientificName: "—", confidence: Math.min(avgConf, 35), healthStatus: "unknown", diseases: [], summary: `The two verifier models disagreed on identification (${a.scientificName} vs ${b.scientificName}). A clearer, closer photo from a better angle would help.` });
+      }
+    }
+    // Add any B-only subjects, capped.
+    for (let i = 0; i < subjB.length; i++) {
+      if (used.has(i)) continue;
+      const b = subjB[i];
+      merged.push({ ...b, confidence: Math.min(b.confidence ?? 0, 55), summary: (b.summary || "") + " (Single-model identification; one verifier did not confirm — treat as tentative.)" });
+    }
+
+    const rawSubjects = merged.length ? merged : subjA;
     // Confidence gating: anything under 40 is forced to "unknown" with safe defaults
     const subjects = rawSubjects.map((s: any) => {
       const conf = typeof s.confidence === "number" ? s.confidence : 0;
