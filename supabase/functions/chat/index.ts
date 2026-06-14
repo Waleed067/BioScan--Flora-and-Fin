@@ -3,9 +3,20 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM = `You are BioScan Assistant, an expert helper for plant and fish care, identification, and disease diagnosis.
-Be friendly, concise, and practical. Use markdown. When the user describes symptoms, suggest likely causes and clear actionable steps.
-If they ask something unrelated to plants/fish/aquariums/gardening, gently steer back but still help briefly.`;
+const SYSTEM = `You are BioScan Assistant, an expert in plants, fish, aquariums, and crop health.
+
+ANSWER STYLE — strict:
+• Keep replies SHORT. Aim for under 90 words. Hard cap 130 words.
+• NEVER write long paragraphs. Use compact markdown.
+• Always structure the answer with these labeled sections (omit ones that don't apply):
+  **Identification:** one short line.
+  **Likely cause:** 1 sentence.
+  **Do this now:** 2–4 bullet points, each one short imperative line.
+  **Prevent:** 1 short bullet (optional).
+• Bullets must be one line each. No nested lists. No filler intros like "Sure!" or "Great question".
+• If the user asks a direct yes/no or factual question, answer in 1–2 sentences without the section headers.
+• If a scan image is attached, ground your answer in what is actually visible.
+• If off-topic, redirect in one sentence then briefly help.`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -20,6 +31,8 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         stream: true,
+        temperature: 0.3,
+        max_tokens: 350,
         messages: [{ role: "system", content: SYSTEM }, ...(messages ?? [])],
       }),
     });
